@@ -59,6 +59,11 @@ needed (avoiding needless `sudo` prompts).
    .\start_agents.ps1 -Project football_game
    ```
 
+   > **Run this from Windows, not from inside WSL.** `start_agents.ps1` is a
+   > Windows PowerShell script that reaches into WSL for you — if you type `wsl`
+   > first and try to run it in the Linux shell, you'll get `command not found`.
+   > Run it from a Windows PowerShell (or `cmd.exe`) prompt.
+   >
    > If PowerShell blocks the script, launch it with
    > `powershell -ExecutionPolicy Bypass -File .\start_agents.ps1`.
 
@@ -123,6 +128,41 @@ the project list each time.
 
 Creates `Agents - football_game.lnk`. Without `-OutputDir`, shortcuts go into a
 `shortcuts\` folder next to the script (gitignored).
+
+### Put a shortcut on your desktop (step by step)
+
+The easiest way — run this from a Windows PowerShell prompt in the launcher
+folder, and it creates `Agents - Picker.lnk` on your desktop:
+
+```powershell
+cd C:\path\to\agent-launcher
+powershell -ExecutionPolicy Bypass -File .\New-ProjectLauncher.ps1 -OutputDir "$env:USERPROFILE\Desktop"
+```
+
+> From `cmd.exe` instead of PowerShell, use `%USERPROFILE%` for the desktop path:
+> `powershell -ExecutionPolicy Bypass -File .\New-ProjectLauncher.ps1 -OutputDir "%USERPROFILE%\Desktop"`
+
+Then double-click `Agents - Picker.lnk` on your desktop (or right-click → **Pin
+to taskbar**).
+
+**Prefer to make it by hand?** Right-click the desktop → **New → Shortcut**, and
+use these two values (adjust the path to wherever you cloned this repo):
+
+- **Target:**
+  ```
+  C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoExit -NoProfile -ExecutionPolicy Bypass -File "C:\path\to\agent-launcher\start_agents.ps1"
+  ```
+- **Start in:**
+  ```
+  C:\path\to\agent-launcher
+  ```
+
+For a shortcut that jumps straight into one project (no picker), append
+`-Project "your_project_name"` to the end of the Target.
+
+> Don't just double-click `start_agents.ps1` itself — Windows tends to flash a
+> console and close it without running the picker. Always launch via a shortcut
+> like the above (or `powershell -File ...` from a terminal).
 
 ## Adding your own agent
 
