@@ -67,10 +67,9 @@ function Select-Project {
         [Parameter(Mandatory = $true)][string]$ReposRoot
     )
 
-    # List candidate projects: directories under reposRoot, excluding this launcher's own folder.
-    $candidates = Get-ChildItem -Path $ReposRoot -Directory |
-        Where-Object { $_.FullName -ne $PSScriptRoot } |
-        Sort-Object Name
+    # List candidate projects: directories under reposRoot (including this launcher's
+    # own folder, so you can open agents in it to edit the launcher itself).
+    $candidates = Get-ChildItem -Path $ReposRoot -Directory | Sort-Object Name
 
     if (-not $candidates -or $candidates.Count -eq 0) {
         throw "No project folders found under '$ReposRoot'."
