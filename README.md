@@ -98,19 +98,31 @@ needed (avoiding needless `sudo` prompts).
 An agent with no `packageName` (like Claude above) just launches its
 `runCommand` — no version check or update.
 
-## Optional: one-click per-project shortcuts
+## One-click shortcuts
 
-The picker already works for every project. If you want a dedicated, pinnable
-shortcut for a project you use often:
+Double-clicking a `.ps1` (or a plain shortcut to one) tends to just flash a
+console window — it doesn't run the launcher interactively. Use
+`New-ProjectLauncher.ps1` to generate a proper `.lnk` that launches
+`powershell.exe` directly and stays open (`-NoExit`) so the picker prompt and any
+errors are visible.
+
+**Picker shortcut** (recommended — works for every project, drop it on your desktop):
 
 ```powershell
-.\New-ProjectLauncher.ps1 -Project football_game
+.\New-ProjectLauncher.ps1 -OutputDir "$env:USERPROFILE\Desktop"
 ```
 
-This writes `Agents - football_game.lnk` into a `shortcuts\` folder (gitignored).
-Double-click it — or pin it to the taskbar — to launch straight into that
-project with no picker. Add `-OutputDir "$env:USERPROFILE\Desktop"` to drop it on
-your desktop.
+Creates `Agents - Picker.lnk`. Double-click it (or pin it to the taskbar) to open
+the project list each time.
+
+**Per-project shortcut** (straight into one project, no picker):
+
+```powershell
+.\New-ProjectLauncher.ps1 -Project football_game -OutputDir "$env:USERPROFILE\Desktop"
+```
+
+Creates `Agents - football_game.lnk`. Without `-OutputDir`, shortcuts go into a
+`shortcuts\` folder next to the script (gitignored).
 
 ## Adding your own agent
 
