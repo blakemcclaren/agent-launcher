@@ -1,0 +1,127 @@
+# agent-launcher
+
+A tiny Windows + WSL launcher for AI coding agents (Codex, Claude, or your own).
+One double-click → pick a project → it opens a terminal window per agent, each
+already `cd`'d into that project so every AI session starts with a **clean,
+project-scoped context** (its own `CLAUDE.md` / `AGENTS.md`, etc.).
+
+It also keeps npm-based agents up to date: before launching, it checks the
+installed version against the latest published version and updates only when
+needed (avoiding needless `sudo` prompts).
+
+## How it works
+
+- Your projects live under a single **reposRoot** (e.g. `E:\repo` or `C:\dev`).
+- `start_agents.ps1` reads `config.json`, lets you pick a project, converts the
+  Windows path to its WSL mount path (`E:\repo\foo` → `/mnt/e/repo/foo`), then
+  opens one Command Prompt window per configured agent — each attaching to WSL,
+  optionally updating the agent, and running it inside the project directory.
+- The launcher lives in its **own folder, outside your projects**, so its files
+  never pollute any project's AI context.
+
+## Requirements
+
+- Windows with **WSL** installed, and a Linux distro where your agent CLIs run.
+- Your AI agent CLIs installed *inside WSL* (e.g. `claude`, `codex`).
+- For auto-update of npm-based agents: `npm` available in WSL, and `sudo` usable
+  for global installs.
+
+## Setup
+
+1. **Clone** this repo somewhere *outside* your projects folder. (If your
+   projects are in `E:\repo`, putting the launcher at `E:\repo\agent-launcher`
+   is fine — it excludes itself from the project picker.)
+
+2. **Create your config** from the template:
+
+   ```powershell
+   copy config.example.json config.json
+   ```
+
+   `config.json` is gitignored — it holds your machine-specific settings and is
+   never committed or shared.
+
+3. **Edit `config.json`:**
+   - Set `reposRoot` to the folder that contains your projects (use double
+     backslashes, e.g. `"E:\\repo"`).
+   - List the `agents` you use. Ship-with examples are Codex and Claude; keep,
+     remove, or add your own.
+
+4. **Run it:**
+
+   ```powershell
+   .\start_agents.ps1
+   ```
+
+   Pick a project from the list, and the agent windows open. To skip the picker:
+
+   ```powershell
+   .\start_agents.ps1 -Project football_game
+   ```
+
+   > If PowerShell blocks the script, launch it with
+   > `powershell -ExecutionPolicy Bypass -File .\start_agents.ps1`.
+
+## config.json reference
+
+```json
+{
+  "reposRoot": "E:\\repo",
+  "holdWindowOpen": false,
+  "agents": [
+    {
+      "title": "Codex Agent",
+      "packageName": "@openai/codex",
+      "updateTarget": "npm install -g @openai/codex@latest",
+      "versionCommand": "codex --version",
+      "runCommand": "codex"
+    },
+    {
+      "title": "Claude Agent",
+      "runCommand": "claude"
+    }
+  ]
+}
+```
+
+| Field            | Scope  | Meaning |
+|------------------|--------|---------|
+| `reposRoot`      | top    | Windows folder containing your projects. |
+| `holdWindowOpen` | top    | `true` keeps the launching PowerShell window open after launch (debugging). |
+| `title`          | agent  | Window title for this agent. **Required.** |
+| `runCommand`     | agent  | Command run inside WSL to start the agent (e.g. `claude`). |
+| `packageName`    | agent  | *(optional)* npm package to version-check before launch. |
+| `updateTarget`   | agent  | *(optional)* command used to update the package when out of date. |
+| `versionCommand` | agent  | *(optional)* command that prints the installed version. |
+| `versionPattern` | agent  | *(optional)* regex to extract the version; a `(?<version>...)` group is preferred. Falls back to the first `x.y.z` found. |
+
+An agent with no `packageName` (like Claude above) just launches its
+`runCommand` — no version check or update.
+
+## Optional: one-click per-project shortcuts
+
+The picker already works for every project. If you want a dedicated, pinnable
+shortcut for a project you use often:
+
+```powershell
+.\New-ProjectLauncher.ps1 -Project football_game
+```
+
+This writes `Agents - football_game.lnk` into a `shortcuts\` folder (gitignored).
+Double-click it — or pin it to the taskbar — to launch straight into that
+project with no picker. Add `-OutputDir "$env:USERPROFILE\Desktop"` to drop it on
+your desktop.
+
+## Adding your own agent
+
+Add an entry to the `agents` array in `config.json`:
+
+- **CLI already installed, no auto-update:** just `title` + `runCommand`.
+- **npm package you want auto-updated:** add `packageName`, `updateTarget`, and
+  `versionCommand` so the launcher checks and updates it before each run.
+
+## Notes & limitations
+
+- This targets **Windows + WSL**. The Windows→WSL path conversion assumes your
+  projects sit on a drive mounted at `/mnt/<drive-letter>` (the WSL default).
+- Update checks use `npm`/`sudo` inside WSL; non-npm agents simply skip that step.

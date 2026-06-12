@@ -1,0 +1,17 @@
+{
+  "reposRoot": "C:\\dev",
+  "holdWindowOpen": false,
+  "agents": [
+    {
+      "title": "Codex Agent",
+      "packageName": "@openai/codex",
+      "updateTarget": "npm install -g @openai/codex@latest",
+      "versionCommand": "codex --version",
+      "runCommand": "codex"
+    },
+    {
+      "title": "Claude Agent",
+      "runCommand": "claude"
+    }
+  ]
+}

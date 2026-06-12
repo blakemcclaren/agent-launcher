@@ -1,0 +1,7 @@
+# Personal, machine-specific configuration — never commit or share this.
+# Each user copies config.example.json -> config.json and personalizes it.
+config.json
+
+# Generated per-project shortcuts (made by New-ProjectLauncher.ps1)
+shortcuts/
+*.lnk
