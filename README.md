@@ -9,6 +9,16 @@ It also keeps npm-based agents up to date: before launching, it checks the
 installed version against the latest published version and updates only when
 needed (avoiding needless `sudo` prompts).
 
+> ### 👉 Getting started
+> Click the green **"Use this template"** button at the top of this repo to
+> create your own copy, then follow [Setup](#setup) below. (Or just clone it.)
+> Your personal settings live in `config.json`, which is gitignored — so nothing
+> machine-specific ever ends up in your copy or gets shared.
+>
+> **Want an AI to walk you through setup?** Paste the prompt in
+> [docs/SETUP_PROMPT.md](docs/SETUP_PROMPT.md) into Claude, Codex, or any AI
+> assistant and it'll guide you step by step.
+
 ## How it works
 
 - Your projects live under a single **reposRoot** (e.g. `E:\repo` or `C:\dev`).
