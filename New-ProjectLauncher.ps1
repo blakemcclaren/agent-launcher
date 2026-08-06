@@ -4,8 +4,9 @@
 #   - With -Project: a shortcut that launches straight into that project (no picker).
 #   - Without -Project: a "picker" shortcut that opens the project list each time.
 #
-# Generated shortcuts run powershell.exe directly (so they actually run, instead of
-# flashing) and use -NoExit so any output or error stays on screen.
+# Generated shortcuts run powershell.exe directly, so they actually run instead of
+# flashing. The launcher window closes itself once the agent windows are open;
+# start_agents.ps1 pauses on its own when there's an error or warning to read.
 #
 # Examples:
 #   .\New-ProjectLauncher.ps1                                  # picker shortcut
@@ -20,7 +21,11 @@ param(
     [string]$Project,
 
     # Where to write the .lnk. Defaults to a 'shortcuts' folder next to this script.
-    [string]$OutputDir
+    [string]$OutputDir,
+
+    # Add -NoExit to the shortcut so the launcher window stays open after a clean
+    # run too. Handy when debugging the launcher itself.
+    [switch]$KeepOpen
 )
 
 $ErrorActionPreference = 'Stop'
@@ -56,9 +61,13 @@ if (-not $powershell) {
     $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 }
 
-# -NoExit keeps the window open so the picker prompt (or any error) is visible
-# instead of flashing closed.
-$arguments = '-NoExit -NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $launcher
+# No -NoExit by default: the launcher window closes itself once the agent windows
+# open, and start_agents.ps1 holds the window open on its own when there's an error
+# or warning worth reading.
+$arguments = '-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $launcher
+if ($KeepOpen) {
+    $arguments = '-NoExit ' + $arguments
+}
 if (-not $usePicker) {
     $arguments += ' -Project "{0}"' -f $Project
 }
@@ -79,4 +88,10 @@ if ($usePicker) {
 }
 else {
     Write-Host "Double-click it (or pin it to the taskbar) to launch agents straight into '$Project'."
+}
+if ($KeepOpen) {
+    Write-Host "The launcher window will stay open after launching (-KeepOpen)."
+}
+else {
+    Write-Host "The launcher window closes itself once the agent windows are open."
 }

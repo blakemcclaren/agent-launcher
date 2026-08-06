@@ -102,7 +102,7 @@ needed (avoiding needless `sudo` prompts).
 | Field            | Scope  | Meaning |
 |------------------|--------|---------|
 | `reposRoot`      | top    | Windows folder containing your projects. |
-| `holdWindowOpen` | top    | `true` keeps the launching PowerShell window open after launch (debugging). |
+| `holdWindowOpen` | top    | `true` always pauses (`Press Enter to close`) before the launcher window closes. Default `false` — it closes itself after a clean launch, and still waits whenever there's an error or warning to read. |
 | `title`          | agent  | Window title for this agent. **Required.** |
 | `runCommand`     | agent  | Command run inside WSL to start the agent (e.g. `claude`). |
 | `packageName`    | agent  | *(optional)* npm package to version-check before launch. |
@@ -118,8 +118,17 @@ An agent with no `packageName` (like Claude above) just launches its
 Double-clicking a `.ps1` (or a plain shortcut to one) tends to just flash a
 console window — it doesn't run the launcher interactively. Use
 `New-ProjectLauncher.ps1` to generate a proper `.lnk` that launches
-`powershell.exe` directly and stays open (`-NoExit`) so the picker prompt and any
-errors are visible.
+`powershell.exe` directly.
+
+The launcher window **closes itself** once the agent windows are open, so there's
+nothing left to dismiss. It only sticks around when there's something to read —
+an error or a warning — or when `holdWindowOpen` is `true` in `config.json`. Pass
+`-KeepOpen` to `New-ProjectLauncher.ps1` if you'd rather the window always stay
+up (it adds `-NoExit` back).
+
+> **Already have a shortcut on your desktop?** Shortcuts generated before this
+> change still carry `-NoExit` and will keep sitting there after launching.
+> Re-run `New-ProjectLauncher.ps1` (same command as below) to regenerate it.
 
 **Picker shortcut** (recommended — works for every project, drop it on your desktop):
 
@@ -160,7 +169,7 @@ use these two values (adjust the path to wherever you cloned this repo):
 
 - **Target:**
   ```
-  C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoExit -NoProfile -ExecutionPolicy Bypass -File "C:\path\to\agent-launcher\start_agents.ps1"
+  C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\path\to\agent-launcher\start_agents.ps1"
   ```
 - **Start in:**
   ```

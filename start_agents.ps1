@@ -4,6 +4,10 @@
 # directory set to the project root, so each AI session gets a clean, project-scoped
 # context (its own CLAUDE.md / AGENTS.md, etc.).
 #
+# Once the agent windows are open this launcher window closes itself. It only stays
+# open when there's something to read - an error or a warning - or when
+# holdWindowOpen is true in config.json.
+#
 # Configuration lives in config.json (copy config.example.json to get started).
 # See README.md for setup.
 
@@ -16,52 +20,27 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# ---------------------------------------------------------------------------
-# Load configuration
-# ---------------------------------------------------------------------------
-$configPath = Join-Path $PSScriptRoot 'config.json'
-
-if (-not (Test-Path $configPath)) {
-    Write-Error @"
-config.json not found.
-
-Copy the example and personalize it for your machine:
-    copy config.example.json config.json
-
-Then edit config.json to set your reposRoot and the agents you use.
-"@
-    exit 1
-}
-
-try {
-    $config = Get-Content -Path $configPath -Raw | ConvertFrom-Json
-}
-catch {
-    Write-Error "Failed to parse config.json: $_"
-    exit 1
-}
-
-if (-not $config.reposRoot) {
-    Write-Error "config.json is missing 'reposRoot' (the folder that holds your projects, e.g. 'E:\\repo')."
-    exit 1
-}
-
-if (-not $config.agents -or $config.agents.Count -eq 0) {
-    Write-Error "config.json has no 'agents' defined. Add at least one agent (see config.example.json)."
-    exit 1
-}
-
-$reposRoot = $config.reposRoot
-$holdWindowOpen = [bool]$config.holdWindowOpen  # flip in config.json to keep this window open for debugging
-
-if (-not (Test-Path $reposRoot)) {
-    Write-Error "reposRoot '$reposRoot' was not found. Update reposRoot in config.json."
-    exit 1
-}
+# Defaults set before anything can fail, so the finally block below can always
+# decide whether to keep this window open.
+$script:holdWindowOpen = $false
+$script:hadProblem = $false
+$exitCode = 0
 
 # ---------------------------------------------------------------------------
-# Resolve which project to launch into
+# Helpers
 # ---------------------------------------------------------------------------
+
+# Like Write-Warning, but also flags that this window should wait for the user
+# before closing - otherwise the warning would scroll past and vanish.
+function Write-LauncherWarning {
+    param(
+        [Parameter(Mandatory = $true)][string]$Message
+    )
+
+    $script:hadProblem = $true
+    Write-Warning $Message
+}
+
 function Select-Project {
     param(
         [Parameter(Mandatory = $true)][string]$ReposRoot
@@ -86,8 +65,7 @@ function Select-Project {
         $choice = Read-Host "Enter number (or 'q' to quit)"
 
         if ($choice -match '^(q|quit|exit)$') {
-            Write-Host "Cancelled."
-            exit 0
+            return $null
         }
 
         $index = 0
@@ -98,25 +76,6 @@ function Select-Project {
         Write-Host "Invalid selection. Enter a number between 1 and $($candidates.Count)." -ForegroundColor Yellow
     }
 }
-
-if ([string]::IsNullOrWhiteSpace($Project)) {
-    $Project = Select-Project -ReposRoot $reposRoot
-}
-
-$repoPath = Join-Path $reposRoot $Project
-
-if (-not (Test-Path $repoPath)) {
-    Write-Error "Project path '$repoPath' was not found. Check the project name or your reposRoot in config.json."
-    exit 1
-}
-
-# Convert the Windows project path to its WSL mount path (e.g. E:\repo\foo -> /mnt/e/repo/foo).
-$driveLetter = $repoPath.Substring(0, 1).ToLower()
-$wslPath = "/mnt/$driveLetter" + $repoPath.Substring(2).Replace('\', '/')
-
-Write-Host "Launching agents for project '$Project'" -ForegroundColor Green
-Write-Host "  Windows path: $repoPath"
-Write-Host "  WSL path:     $wslPath"
 
 # ---------------------------------------------------------------------------
 # WSL helpers (version detection + latest-version lookup)
@@ -225,90 +184,168 @@ function Get-LatestPackageVersion {
     return $null
 }
 
-# ---------------------------------------------------------------------------
-# Launch each agent
-# ---------------------------------------------------------------------------
-foreach ($agent in $config.agents) {
-    if (-not $agent.title) {
-        Write-Warning "Skipping an agent entry with no 'title'."
-        continue
+try {
+    # -----------------------------------------------------------------------
+    # Load configuration
+    # -----------------------------------------------------------------------
+    $configPath = Join-Path $PSScriptRoot 'config.json'
+
+    if (-not (Test-Path $configPath)) {
+        throw @"
+config.json not found.
+
+Copy the example and personalize it for your machine:
+    copy config.example.json config.json
+
+Then edit config.json to set your reposRoot and the agents you use.
+"@
     }
 
-    $installedVersion = $null
-    $latestVersion = $null
-    $hasPackage = [bool]$agent.packageName
-    $shouldUpdate = $hasPackage
+    try {
+        $config = Get-Content -Path $configPath -Raw | ConvertFrom-Json
+    }
+    catch {
+        throw "Failed to parse config.json: $_"
+    }
 
-    if ($hasPackage) {
-        if (-not $agent.updateTarget) {
-            Write-Warning "$($agent.title): 'packageName' is set but 'updateTarget' is missing - skipping auto-update."
-            $shouldUpdate = $false
+    if (-not $config.reposRoot) {
+        throw "config.json is missing 'reposRoot' (the folder that holds your projects, e.g. 'E:\\repo')."
+    }
+
+    if (-not $config.agents -or $config.agents.Count -eq 0) {
+        throw "config.json has no 'agents' defined. Add at least one agent (see config.example.json)."
+    }
+
+    $reposRoot = $config.reposRoot
+    # Flip holdWindowOpen in config.json to always pause before this window closes.
+    $script:holdWindowOpen = [bool]$config.holdWindowOpen
+
+    if (-not (Test-Path $reposRoot)) {
+        throw "reposRoot '$reposRoot' was not found. Update reposRoot in config.json."
+    }
+
+    # -----------------------------------------------------------------------
+    # Resolve which project to launch into
+    # -----------------------------------------------------------------------
+    if ([string]::IsNullOrWhiteSpace($Project)) {
+        $Project = Select-Project -ReposRoot $reposRoot
+    }
+
+    if ([string]::IsNullOrWhiteSpace($Project)) {
+        # Picker was cancelled - nothing to report, so let the window close.
+        Write-Host "Cancelled."
+    }
+    else {
+        $repoPath = Join-Path $reposRoot $Project
+
+        if (-not (Test-Path $repoPath)) {
+            throw "Project path '$repoPath' was not found. Check the project name or your reposRoot in config.json."
         }
-        else {
-            try {
-                $installedVersion = Get-AgentInstalledVersion -Agent $agent
-            }
-            catch {
-                Write-Warning "$($agent.title): Failed to read installed version. $_"
+
+        # Convert the Windows project path to its WSL mount path (e.g. E:\repo\foo -> /mnt/e/repo/foo).
+        $driveLetter = $repoPath.Substring(0, 1).ToLower()
+        $wslPath = "/mnt/$driveLetter" + $repoPath.Substring(2).Replace('\', '/')
+
+        Write-Host "Launching agents for project '$Project'" -ForegroundColor Green
+        Write-Host "  Windows path: $repoPath"
+        Write-Host "  WSL path:     $wslPath"
+
+        # -------------------------------------------------------------------
+        # Launch each agent
+        # -------------------------------------------------------------------
+        foreach ($agent in $config.agents) {
+            if (-not $agent.title) {
+                Write-LauncherWarning "Skipping an agent entry with no 'title'."
+                continue
             }
 
-            try {
-                $latestVersion = Get-LatestPackageVersion -PackageName $agent.packageName
-            }
-            catch {
-                Write-Warning "$($agent.title): Failed to resolve latest version for $($agent.packageName). $_"
-            }
+            $installedVersion = $null
+            $latestVersion = $null
+            $hasPackage = [bool]$agent.packageName
+            $shouldUpdate = $hasPackage
 
-            if ($installedVersion) {
-                if ($latestVersion) {
-                    if ($installedVersion -eq $latestVersion) {
-                        Write-Host "$($agent.title): $($agent.packageName) is up to date ($installedVersion)."
-                        $shouldUpdate = $false
+            if ($hasPackage) {
+                if (-not $agent.updateTarget) {
+                    Write-LauncherWarning "$($agent.title): 'packageName' is set but 'updateTarget' is missing - skipping auto-update."
+                    $shouldUpdate = $false
+                }
+                else {
+                    try {
+                        $installedVersion = Get-AgentInstalledVersion -Agent $agent
+                    }
+                    catch {
+                        Write-LauncherWarning "$($agent.title): Failed to read installed version. $_"
+                    }
+
+                    try {
+                        $latestVersion = Get-LatestPackageVersion -PackageName $agent.packageName
+                    }
+                    catch {
+                        Write-LauncherWarning "$($agent.title): Failed to resolve latest version for $($agent.packageName). $_"
+                    }
+
+                    if ($installedVersion) {
+                        if ($latestVersion) {
+                            if ($installedVersion -eq $latestVersion) {
+                                Write-Host "$($agent.title): $($agent.packageName) is up to date ($installedVersion)."
+                                $shouldUpdate = $false
+                            }
+                            else {
+                                Write-Host "$($agent.title): $($agent.packageName) installed $installedVersion, latest $latestVersion - updating."
+                                $shouldUpdate = $true
+                            }
+                        }
+                        else {
+                            Write-LauncherWarning "$($agent.title): Installed version $installedVersion detected, but latest version could not be retrieved. Skipping update to avoid an unnecessary sudo prompt."
+                            $shouldUpdate = $false
+                        }
                     }
                     else {
-                        Write-Host "$($agent.title): $($agent.packageName) installed $installedVersion, latest $latestVersion - updating."
+                        if ($latestVersion) {
+                            Write-Host "$($agent.title): Not installed. Latest available $latestVersion - installing."
+                        }
+                        else {
+                            Write-Host "$($agent.title): Unable to determine package state, attempting installation to ensure availability."
+                        }
                         $shouldUpdate = $true
                     }
                 }
-                else {
-                    Write-Warning "$($agent.title): Installed version $installedVersion detected, but latest version could not be retrieved. Skipping update to avoid an unnecessary sudo prompt."
-                    $shouldUpdate = $false
-                }
+            }
+
+            $wslCommands = @("cd $wslPath")
+
+            if ($shouldUpdate -and $agent.updateTarget) {
+                $wslCommands += "sudo $($agent.updateTarget)"
+            }
+            elseif ($hasPackage) {
+                $wslCommands += ('echo {0} already up to date.' -f $agent.packageName)
+            }
+
+            if ($agent.runCommand) {
+                $wslCommands += ("exec {0}" -f $agent.runCommand)
             }
             else {
-                if ($latestVersion) {
-                    Write-Host "$($agent.title): Not installed. Latest available $latestVersion - installing."
-                }
-                else {
-                    Write-Host "$($agent.title): Unable to determine package state, attempting installation to ensure availability."
-                }
-                $shouldUpdate = $true
+                Write-LauncherWarning "$($agent.title): no 'runCommand' set - the window will open but no agent will start."
             }
+
+            $wslInner = ($wslCommands -join " && ")
+            $cmdLine = "title $($agent.title) && cd /d $repoPath && wsl.exe -e bash -lc `"$wslInner`""
+            Start-Process -FilePath "cmd.exe" -ArgumentList "/k", $cmdLine
         }
     }
-
-    $wslCommands = @("cd $wslPath")
-
-    if ($shouldUpdate -and $agent.updateTarget) {
-        $wslCommands += "sudo $($agent.updateTarget)"
-    }
-    elseif ($hasPackage) {
-        $wslCommands += ('echo {0} already up to date.' -f $agent.packageName)
-    }
-
-    if ($agent.runCommand) {
-        $wslCommands += ("exec {0}" -f $agent.runCommand)
-    }
-    else {
-        Write-Warning "$($agent.title): no 'runCommand' set - the window will open but no agent will start."
-    }
-
-    $wslInner = ($wslCommands -join " && ")
-    $cmdLine = "title $($agent.title) && cd /d $repoPath && wsl.exe -e bash -lc `"$wslInner`""
-    Start-Process -FilePath "cmd.exe" -ArgumentList "/k", $cmdLine
 }
-
-if ($holdWindowOpen) {
+catch {
+    $script:hadProblem = $true
+    $exitCode = 1
     Write-Host ""
-    Read-Host "Press Enter once you're done reviewing the launch output"
+    Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
 }
+finally {
+    # A clean run has nothing left to show, so let this window close on its own.
+    if ($script:holdWindowOpen -or $script:hadProblem) {
+        Write-Host ""
+        Read-Host "Press Enter to close"
+    }
+}
+
+exit $exitCode
