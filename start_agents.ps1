@@ -13,8 +13,8 @@
 
 [CmdletBinding()]
 param(
-    # Project folder name under reposRoot (e.g. "football_game"). If omitted, an
-    # interactive picker lists the projects found under reposRoot.
+    # Project folder name under a reposRoot (e.g. "football_game"). If omitted, an
+    # interactive picker lists the projects found under every reposRoot.
     [string]$Project
 )
 
@@ -43,23 +43,32 @@ function Write-LauncherWarning {
 
 function Select-Project {
     param(
-        [Parameter(Mandatory = $true)][string]$ReposRoot
+        [Parameter(Mandatory = $true)][string[]]$ReposRoots
     )
 
-    # List candidate projects: directories under reposRoot (including this launcher's
-    # own folder, so you can open agents in it to edit the launcher itself).
-    $candidates = Get-ChildItem -Path $ReposRoot -Directory | Sort-Object Name
-
-    if (-not $candidates -or $candidates.Count -eq 0) {
-        throw "No project folders found under '$ReposRoot'."
-    }
-
+    # List candidate projects: directories under each reposRoot (including this
+    # launcher's own folder, so you can open agents in it to edit the launcher itself).
+    # Numbering runs across all roots, grouped under a header per root.
+    $candidates = @()
     Write-Host ""
-    Write-Host "Select a project (under $ReposRoot):" -ForegroundColor Cyan
-    for ($i = 0; $i -lt $candidates.Count; $i++) {
-        Write-Host ("  {0}) {1}" -f ($i + 1), $candidates[$i].Name)
+    Write-Host "Select a project:" -ForegroundColor Cyan
+    foreach ($root in $ReposRoots) {
+        $dirs = @(Get-ChildItem -Path $root -Directory | Sort-Object Name)
+        if ($dirs.Count -eq 0) {
+            continue
+        }
+
+        Write-Host "  $root" -ForegroundColor DarkCyan
+        foreach ($dir in $dirs) {
+            $candidates += $dir
+            Write-Host ("    {0}) {1}" -f $candidates.Count, $dir.Name)
+        }
     }
     Write-Host ""
+
+    if ($candidates.Count -eq 0) {
+        throw "No project folders found under: $($ReposRoots -join ', ')."
+    }
 
     while ($true) {
         $choice = Read-Host "Enter number (or 'q' to quit)"
@@ -70,11 +79,32 @@ function Select-Project {
 
         $index = 0
         if ([int]::TryParse($choice, [ref]$index) -and $index -ge 1 -and $index -le $candidates.Count) {
-            return $candidates[$index - 1].Name
+            return $candidates[$index - 1].FullName
         }
 
         Write-Host "Invalid selection. Enter a number between 1 and $($candidates.Count)." -ForegroundColor Yellow
     }
+}
+
+# Find a project folder by name across all reposRoots. The first root (in config
+# order) wins if the same name exists in more than one.
+function Resolve-ProjectPath {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$ReposRoots,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+
+    $found = @($ReposRoots | ForEach-Object { Join-Path $_ $Name } | Where-Object { Test-Path $_ -PathType Container })
+
+    if ($found.Count -eq 0) {
+        throw "Project '$Name' was not found under: $($ReposRoots -join ', '). Check the project name or reposRoot in config.json."
+    }
+
+    if ($found.Count -gt 1) {
+        Write-LauncherWarning "Project '$Name' exists in more than one reposRoot; using '$($found[0])'."
+    }
+
+    return $found[0]
 }
 
 # ---------------------------------------------------------------------------
@@ -197,7 +227,7 @@ config.json not found.
 Copy the example and personalize it for your machine:
     copy config.example.json config.json
 
-Then edit config.json to set your reposRoot and the agents you use.
+Then edit config.json to set your reposRoot(s) and the agents you use.
 "@
     }
 
@@ -209,38 +239,48 @@ Then edit config.json to set your reposRoot and the agents you use.
     }
 
     if (-not $config.reposRoot) {
-        throw "config.json is missing 'reposRoot' (the folder that holds your projects, e.g. 'E:\\repo')."
+        throw "config.json is missing 'reposRoot' (the folder - or list of folders - that holds your projects, e.g. 'E:\\repo')."
     }
 
     if (-not $config.agents -or $config.agents.Count -eq 0) {
         throw "config.json has no 'agents' defined. Add at least one agent (see config.example.json)."
     }
 
-    $reposRoot = $config.reposRoot
     # Flip holdWindowOpen in config.json to always pause before this window closes.
     $script:holdWindowOpen = [bool]$config.holdWindowOpen
 
-    if (-not (Test-Path $reposRoot)) {
-        throw "reposRoot '$reposRoot' was not found. Update reposRoot in config.json."
+    # reposRoot may be a single path or a list of paths. Missing roots are skipped
+    # with a warning, so one unplugged drive doesn't block the others.
+    $reposRoots = @()
+    foreach ($root in @($config.reposRoot)) {
+        if (Test-Path $root -PathType Container) {
+            $reposRoots += $root
+        }
+        else {
+            Write-LauncherWarning "reposRoot '$root' was not found - skipping it. Update reposRoot in config.json."
+        }
+    }
+
+    if ($reposRoots.Count -eq 0) {
+        throw "None of the reposRoot folders in config.json were found."
     }
 
     # -----------------------------------------------------------------------
     # Resolve which project to launch into
     # -----------------------------------------------------------------------
     if ([string]::IsNullOrWhiteSpace($Project)) {
-        $Project = Select-Project -ReposRoot $reposRoot
+        $repoPath = Select-Project -ReposRoots $reposRoots
+    }
+    else {
+        $repoPath = Resolve-ProjectPath -ReposRoots $reposRoots -Name $Project
     }
 
-    if ([string]::IsNullOrWhiteSpace($Project)) {
+    if ([string]::IsNullOrWhiteSpace($repoPath)) {
         # Picker was cancelled - nothing to report, so let the window close.
         Write-Host "Cancelled."
     }
     else {
-        $repoPath = Join-Path $reposRoot $Project
-
-        if (-not (Test-Path $repoPath)) {
-            throw "Project path '$repoPath' was not found. Check the project name or your reposRoot in config.json."
-        }
+        $Project = Split-Path $repoPath -Leaf
 
         # Convert the Windows project path to its WSL mount path (e.g. E:\repo\foo -> /mnt/e/repo/foo).
         $driveLetter = $repoPath.Substring(0, 1).ToLower()

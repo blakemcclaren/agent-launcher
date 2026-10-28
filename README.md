@@ -21,7 +21,8 @@ needed (avoiding needless `sudo` prompts).
 
 ## How it works
 
-- Your projects live under a single **reposRoot** (e.g. `E:\repo` or `C:\dev`).
+- Your projects live under a **reposRoot** (e.g. `E:\repo` or `C:\dev`) — or
+  several, if they're spread across folders or drives.
 - `start_agents.ps1` reads `config.json`, lets you pick a project, converts the
   Windows path to its WSL mount path (`E:\repo\foo` → `/mnt/e/repo/foo`), then
   opens one Command Prompt window per configured agent — each attaching to WSL,
@@ -101,7 +102,7 @@ needed (avoiding needless `sudo` prompts).
 
 | Field            | Scope  | Meaning |
 |------------------|--------|---------|
-| `reposRoot`      | top    | Windows folder containing your projects. |
+| `reposRoot`      | top    | Windows folder containing your projects — or a list of folders, e.g. `["E:\\repo", "G:\\gamedev"]`. The picker shows projects from all of them; with `-Project`, the first folder (in list order) that has a matching name wins. Missing folders are skipped with a warning. |
 | `holdWindowOpen` | top    | `true` always pauses (`Press Enter to close`) before the launcher window closes. Default `false` — it closes itself after a clean launch, and still waits whenever there's an error or warning to read. |
 | `title`          | agent  | Window title for this agent. **Required.** |
 | `runCommand`     | agent  | Command run inside WSL to start the agent (e.g. `claude`). |
